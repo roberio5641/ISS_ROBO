@@ -41,6 +41,8 @@ async function issDownload(driver) {
 
     console.log("Campos de login preenchidos com sucesso.");
 
+    await driver.sleep(2000)
+
     //simula apertar a tecla Enter
     const enterBtn = await driver.findElement(By.css('button.btn.btn-block.btn-primary.mt-3'));
     await enterBtn.click();
@@ -184,20 +186,72 @@ async function executarISS() {
   console.log("Iniciando o processo de download do ISS...");
 
   let options = new chrome.Options();
-  options.addArguments("--headless=new");
-  options.addArguments("--window-size=1920,1080");
-  options.addArguments("--disable-gpu");
-  options.addArguments("--no-sandbox");
-  options.addArguments("--start-maximized");
+  
+  // Configurações de execução
+  options.addArguments([
+    // Descomente a linha abaixo para modo headless se necessário
+    // "--headless=new", 
+    "--window-size=1920,1080",
+    "--disable-gpu",
+    "--no-sandbox",
+    "--start-maximized",
+    "--disable-dev-shm-usage",
+    "--safebrowsing-disable-download-protection",
+    "--disable-features=DownloadBubble,DownloadBubbleV2",
+    "--disable-blink-features=AutomationControlled"
+  ]);
 
-  let driver = await new Builder().forBrowser("chrome").setChromeOptions(options).build();
+  // Configurações específicas para downloads
+  const downloadDir = path.join("C:", "Downloads");
+  let prefs = {
+  "profile.default_content_settings.popups": 0,
+  "download.prompt_for_download": false,
+  "download.directory_upgrade": true,
+  "download.default_directory": downloadDir,
+  "safebrowsing.enabled": true, // precisa estar true ou o Chrome ignora
+  "safebrowsing.disable_download_protection": true, // força o ignore no warning
+  "plugins.always_open_pdf_externally": true
+};
+  
+  options.setUserPreferences(prefs);
 
+  // Configurações adicionais para evitar detecção como bot
+  options.setAcceptInsecureCerts(true);
+  options.excludeSwitches("enable-automation");
+
+  let driver;
   try {
+    driver = await new Builder()
+      .forBrowser("chrome")
+      .setChromeOptions(options)
+      .build();
+
+    // Configurar tempo de espera padrão
+    await driver.manage().setTimeouts({
+      implicit: 10000,
+      pageLoad: 30000,
+      script: 30000
+    });
+
+    // Criar diretório de downloads se não existir
+    const fs = require('fs');
+    if (!fs.existsSync(downloadDir)) {
+      fs.mkdirSync(downloadDir, { recursive: true });
+    }
+
     await issDownload(driver);
+    
   } catch (e) {
     console.log("Erro durante o processo de download:", e.message);
+    // Capturar screenshot em caso de erro
+    if (driver) {
+      const screenshot = await driver.takeScreenshot();
+      fs.writeFileSync('erro_download.png', screenshot, 'base64');
+    }
   } finally {
-    await driver.quit();
+    if (driver) {
+      await driver.quit();
+    }
   }
 }
 
